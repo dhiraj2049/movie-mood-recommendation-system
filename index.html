@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VIBE — Movie Recommender</title>
+<style>
+body{font-family:Arial,sans-serif;background:#0b0b0b;color:#fff;margin:0;padding:0}header{padding:24px;text-align:center;border-bottom:1px solid #222}h1{margin:0;color:#e5ff3c}#app{max-width:1200px;margin:auto;padding:24px}.toolbar{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px}.pill{padding:10px 16px;border:1px solid #333;background:#161616;color:#fff;border-radius:999px;cursor:pointer}.pill.active{background:#e5ff3c;color:#000}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px}.card{background:#151515;border-radius:10px;overflow:hidden;cursor:pointer;border:1px solid #222}.card img{width:100%;height:270px;object-fit:cover;background:#222}.card .info{padding:10px}.muted{color:#aaa;font-size:12px}.status{margin-bottom:16px;color:#aaa}.error{color:#ff6b6b}.loadmore{margin-top:24px;text-align:center}button.main{padding:12px 20px;background:#e5ff3c;border:none;border-radius:999px;cursor:pointer}input{padding:10px 12px;border-radius:8px;border:1px solid #333;background:#111;color:#fff}.modal{position:fixed;inset:0;background:rgba(0,0,0,.8);display:none;align-items:center;justify-content:center}.modal.open{display:flex}.modal-box{width:min(700px,92vw);background:#121212;border-radius:14px;overflow:hidden}.modal-content{padding:20px}.close{float:right;cursor:pointer;font-size:22px}
+</style>
+</head>
+<body>
+<header>
+<h1>VIBE</h1>
+<div class="muted">Discover cinema by mood</div>
+</header>
+<div id="app">
+<div class="status" id="status">Connecting...</div>
+<div class="toolbar">
+<input id="searchInput" placeholder="Search movie title">
+<button class="main" onclick="searchMovies()">Search</button>
+</div>
+<div class="toolbar" id="vibes"></div>
+<div class="grid" id="movies"></div>
+<div class="loadmore"><button class="main" id="moreBtn" onclick="loadMore()">Load More</button></div>
+</div>
+<div class="modal" id="modal">
+<div class="modal-box">
+<div class="modal-content">
+<span class="close" onclick="closeModal()">×</span>
+<div id="modalBody"></div>
+</div>
+</div>
+</div>
+<script>
+const API_BASE = window.location.origin;
+let currentVibe = null;
+let page = 1;
+let total = 0;
+let movies = [];
+
+async function init(){
+ await health();
+ await loadVibes();
+}
+
+async function health(){
+ try{
+   const r = await fetch(`${API_BASE}/`);
+   if(r.ok) setStatus('Backend online');
+ }catch(e){setStatus('Backend offline','error');}
+}
+
+function setStatus(text,type=''){const el=document.getElementById('status');el.textContent=text;el.className='status '+type;}
+
+async function loadVibes(){
+ const r = await fetch(`${API_BASE}/vibes`);
+ const data = await r.json();
+ const wrap = document.getElementById('vibes');
+ wrap.innerHTML = data.map(v=>`<button class='pill' id='${v.key}' onclick="selectVibe('${v.key}')">${v.emoji} ${v.label}</button>`).join('');
+ if(data.length) selectVibe(data[0].key);
+}
+
+async function selectVibe(vibe){
+ currentVibe=vibe;page=1;movies=[];
+ document.querySelectorAll('.pill').forEach(x=>x.classList.remove('active'));
+ document.getElementById(vibe).classList.add('active');
+ await fetchRecommendations();
+}
+
+async function fetchRecommendations(){
+ const r = await fetch(`${API_BASE}/recommend/${currentVibe}?n=12&page=${page}`);
+ const data = await r.json();
+ total=data.total;
+ movies = page===1 ? data.movies : [...movies,...data.movies];
+ renderMovies(movies);
+ document.getElementById('moreBtn').style.display = movies.length < total ? 'inline-block':'none';
+}
+
+function renderMovies(list){
+ const grid=document.getElementById('movies');
+ grid.innerHTML=list.map(m=>{
+ const poster=m.poster_path?`https://image.tmdb.org/t/p/w342${m.poster_path}`:'';
+ const year=(m.release_date||'').slice(0,4);
+ return `<div class='card' onclick='openMovie(${m.id})'>
+ <img src='${poster}' alt=''>
+ <div class='info'><div>${m.title}</div><div class='muted'>${year} · ⭐ ${m.vote_average}</div></div>
+ </div>`;
+ }).join('');
+}
+
+function loadMore(){page++;fetchRecommendations();}
+
+function openMovie(id){
+ const m = movies.find(x=>x.id===id);
+ if(!m)return;
+ document.getElementById('modalBody').innerHTML=`<h2>${m.title}</h2><p class='muted'>⭐ ${m.vote_average}</p><p>${m.overview||'No overview available.'}</p>`;
+ document.getElementById('modal').classList.add('open');
+}
+function closeModal(){document.getElementById('modal').classList.remove('open');}
+
+async function searchMovies(){
+ const q=document.getElementById('searchInput').value.trim();
+ if(!q)return;
+ const r=await fetch(`${API_BASE}/search?q=${encodeURIComponent(q)}`,{method:'POST'});
+ const data=await r.json();
+ movies=data.results||[];
+ renderMovies(movies);
+ document.getElementById('moreBtn').style.display='none';
+}
+
+init();
+</script>
+</body>
+</html>
